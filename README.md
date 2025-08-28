@@ -6,32 +6,40 @@
 
 - 多语言翻译支持
 - 历史记录功能
+- 内容安全审查
 - Material Design 3 (MD3) 界面设计
 - 动态色彩支持
 - 深色模式适配
 - 响应式布局
+- 预测性返回手势支持（Android 13+）
 
 ## 配置API密钥
 
-要使用自定义大模型API进行翻译，您需要配置API端点和密钥：
+要使用自定义大模型API进行翻译，您可以通过以下方式配置：
 
-1. 打开 `app/src/main/java/org/yuezhikong/translator/config/ApiConfig.kt` 文件
-2. 修改以下常量：
-   - `API_ENDPOINT`: 您的OpenAI兼容API端点
-   - `API_KEY`: 您的API密钥
-   - `MODEL_NAME`: 您要使用的模型名称
+1. **通过设置界面配置（推荐）**：
+   - 点击应用右上角的"设置"按钮
+   - 在设置界面中输入API端点、API密钥和模型名称
+   - 点击"保存设置"按钮
+
+2. **通过代码配置**：
+   - 打开 `app/src/main/java/org/yuezhikong/translator/config/ApiConfig.kt` 文件
+   - 修改以下常量：
+     - `API_ENDPOINT`: 您的OpenAI兼容API端点
+     - `API_KEY`: 您的API密钥
+     - `MODEL_NAME`: 您要使用的模型名称
 
 示例配置：
 ```kotlin
 object ApiConfig {
     // 替换为你的OpenAI兼容API端点
-    const val API_ENDPOINT = "https://api.openai.com/v1/chat/completions"
+    var API_ENDPOINT = "https://api.openai.com/v1/chat/completions"
     
     // 替换为你的API密钥
-    const val API_KEY = "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    var API_KEY = "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
     
     // 替换为你的模型名称
-    const val MODEL_NAME = "gpt-3.5-turbo"
+    var MODEL_NAME = "gpt-3.5-turbo"
 }
 ```
 

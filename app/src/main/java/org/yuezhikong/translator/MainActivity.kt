@@ -2,11 +2,11 @@
 
 package org.yuezhikong.translator
 
-import android.os.Build
-import android.os.Bundle
 import android.content.ClipData
 import android.content.ClipboardManager
-import android.widget.Toast
+import android.content.Context
+import android.os.Build
+import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -23,6 +23,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Fullscreen
 import androidx.compose.material.icons.outlined.FullscreenExit
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.material3.dynamicDarkColorScheme
@@ -33,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.ui.text.font.FontWeight
@@ -50,11 +52,14 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import kotlinx.coroutines.launch
 import org.yuezhikong.translator.api.OpenAITranslationService
+import org.yuezhikong.translator.api.ContentSafetyService
+import org.yuezhikong.translator.ui.settings.SettingsScreen
 
 // ===== Routes =====
 object Routes {
     const val Translate = "translate"
     const val History = "history"
+    const val Settings = "settings"
 }
 
 // ===== MainActivity =====
@@ -99,6 +104,7 @@ data class TranslationItem(
 // ===== ViewModel（使用OpenAI兼容API）=====
 class TranslateViewModel : ViewModel() {
     private val translationService = OpenAITranslationService()
+    private val safetyService = ContentSafetyService()
     private val availableLanguages = listOf(
         Language("auto", "自动检测"),
         Language("en", "英语"),
@@ -119,10 +125,17 @@ class TranslateViewModel : ViewModel() {
     
     // 添加加载状态
     var isLoading by mutableStateOf(false); private set
+    
+    // 添加内容安全状态
+    var isContentSafe by mutableStateOf(true); private set
 
     fun updateSourceLang(lang: Language) { sourceLang = lang }
     fun updateTargetLang(lang: Language) { targetLang = lang }
-    fun updateSourceText(text: String) { sourceText = text }
+    fun updateSourceText(text: String) { 
+        sourceText = text
+        // 重置安全状态
+        isContentSafe = true
+    }
 
     fun swapLanguages() {
         if (sourceLang.code != "auto") {
@@ -141,6 +154,14 @@ class TranslateViewModel : ViewModel() {
             
             isLoading = true
             try {
+                // 首先检查内容安全性
+                isContentSafe = safetyService.isContentSafe(sourceText)
+                
+                if (!isContentSafe) {
+                    translatedText = "内容不安全，无法翻译"
+                    return@launch
+                }
+                
                 // 使用OpenAI兼容API进行翻译
                 val result = translationService.translate(
                     sourceText,
@@ -233,9 +254,9 @@ fun LanguageRow(
 
 // ===== 翻译结果卡片 =====
 @Composable
-fun ResultCard(text: String, onCopySuccess: () -> Unit = {}) {
+fun ResultCard(text: String, onCopySuccess: () -> Unit) {
     val context = LocalContext.current
-    val clipboardManager = ContextCompat.getSystemService(context, ClipboardManager::class.java)
+    val clipboardManager = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     
     ElevatedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -247,7 +268,7 @@ fun ResultCard(text: String, onCopySuccess: () -> Unit = {}) {
                 IconButton(onClick = { 
                     // 复制到剪贴板
                     val clip = ClipData.newPlainText("翻译结果", text)
-                    clipboardManager?.setPrimaryClip(clip)
+                    clipboardManager.setPrimaryClip(clip)
                     
                     // 调用成功回调
                     onCopySuccess()
@@ -339,6 +360,7 @@ fun TranslateScreen(
     var expanded by rememberSaveable { mutableStateOf(false) }
     val configuration = LocalConfiguration.current
     val halfScreenHeight = configuration.screenHeightDp.dp * 0.5f
+    val focusManager = LocalFocusManager.current
 
     // 添加 verticalScroll
     Column(
@@ -368,7 +390,10 @@ fun TranslateScreen(
                 placeholder = { Text("输入要翻译的文本…") },
                 leadingIcon = { Icon(Icons.Rounded.Edit, contentDescription = null) },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { vm.translate() }),
+                keyboardActions = KeyboardActions(onDone = { 
+                    focusManager.clearFocus()
+                    vm.translate()
+                }),
                 singleLine = false
             )
             IconButton(onClick = { expanded = !expanded },
@@ -386,7 +411,11 @@ fun TranslateScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             FilledTonalButton(
-                onClick = vm::translate, 
+                onClick = { 
+                    // 关闭输入法
+                    focusManager.clearFocus()
+                    vm.translate()
+                }, 
                 modifier = Modifier.weight(1f),
                 enabled = !vm.isLoading // 在加载时禁用按钮
             ) {
@@ -418,6 +447,35 @@ fun TranslateScreen(
                     }
                 }
             )
+        }
+        
+        // 显示内容不安全的提示
+        AnimatedVisibility(
+            visible = !vm.isContentSafe,
+            enter = fadeIn(),
+            exit = fadeOut()
+        ) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Rounded.Warning,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "内容不安全，无法翻译",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                }
+            }
         }
         Spacer(Modifier.height(8.dp))
     }
@@ -467,6 +525,19 @@ fun TranslatorApp(vm: TranslateViewModel = viewModel()) {
                         icon = { Icon(Icons.Rounded.History, contentDescription = null) },
                         modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
                     )
+                    NavigationDrawerItem(
+                        label = { Text("设置") },
+                        selected = currentRoute(navController) == Routes.Settings,
+                        onClick = {
+                            navController.navigate(Routes.Settings) {
+                                popUpTo(navController.graph.startDestinationId) { inclusive = false }
+                                launchSingleTop = true
+                            }
+                            scope.launch { drawerState.close() }
+                        },
+                        icon = { Icon(Icons.Rounded.Settings, contentDescription = null) },
+                        modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                    )
                 }
             }
         ) {
@@ -477,18 +548,33 @@ fun TranslatorApp(vm: TranslateViewModel = viewModel()) {
                         title = {
                             val title = when (currentRoute(navController)) {
                                 Routes.History -> "历史记录"
+                                Routes.Settings -> "设置"
                                 else -> "翻译"
                             }
                             Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         },
                         navigationIcon = {
-                            IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                                Icon(Icons.Rounded.Menu, contentDescription = "菜单")
+                            // 只在设置页面显示返回按钮
+                            if (currentRoute(navController) == Routes.Settings) {
+                                IconButton(onClick = { navController.popBackStack() }) {
+                                    Icon(
+                                        Icons.AutoMirrored.Rounded.ArrowBack,
+                                        contentDescription = "返回"
+                                    )
+                                }
+                            } else {
+                                IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                                    Icon(Icons.Rounded.Menu, contentDescription = "菜单")
+                                }
                             }
                         },
                         actions = {
-                            IconButton(onClick = { /* TODO: 设置 */ }) {
-                                Icon(Icons.Rounded.Settings, contentDescription = "设置")
+                            if (currentRoute(navController) != Routes.Settings) {
+                                IconButton(onClick = { 
+                                    navController.navigate(Routes.Settings)
+                                }) {
+                                    Icon(Icons.Rounded.Settings, contentDescription = "设置")
+                                }
                             }
                         }
                     )
@@ -515,6 +601,11 @@ fun TranslatorApp(vm: TranslateViewModel = viewModel()) {
                         }
                         composable(Routes.History) {
                             HistoryScreen(items = vm.history)
+                        }
+                        composable(Routes.Settings) {
+                            SettingsScreen(
+                                onNavigateBack = { navController.popBackStack() }
+                            )
                         }
                     }
                 }

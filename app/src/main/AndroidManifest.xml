@@ -19,7 +19,8 @@
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
-            android:theme="@style/Theme.Translator">
+            android:theme="@style/Theme.Translator"
+            android:enableOnBackInvokedCallback="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
