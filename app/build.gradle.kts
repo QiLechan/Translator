@@ -55,6 +55,10 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     implementation(libs.material3)
     implementation(libs.androidx.runtime.saveable)
+    
+    // 网络请求库
+    implementation("com.squareup.okhttp3:okhttp:4.11.0")
+    
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

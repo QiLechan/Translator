@@ -4,6 +4,9 @@ package org.yuezhikong.translator
 
 import android.os.Build
 import android.os.Bundle
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -36,7 +39,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -44,6 +49,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import kotlinx.coroutines.launch
+import org.yuezhikong.translator.api.OpenAITranslationService
 
 // ===== Routes =====
 object Routes {
@@ -90,8 +96,9 @@ data class TranslationItem(
     val translatedText: String
 )
 
-// ===== ViewModel（演示用假翻译器）=====
+// ===== ViewModel（使用OpenAI兼容API）=====
 class TranslateViewModel : ViewModel() {
+    private val translationService = OpenAITranslationService()
     private val availableLanguages = listOf(
         Language("auto", "自动检测"),
         Language("en", "英语"),
@@ -109,6 +116,9 @@ class TranslateViewModel : ViewModel() {
     var translatedText by mutableStateOf(""); private set
 
     var history = mutableStateListOf<TranslationItem>(); private set
+    
+    // 添加加载状态
+    var isLoading by mutableStateOf(false); private set
 
     fun updateSourceLang(lang: Language) { sourceLang = lang }
     fun updateTargetLang(lang: Language) { targetLang = lang }
@@ -123,16 +133,63 @@ class TranslateViewModel : ViewModel() {
     }
 
     fun translate() {
-        translatedText = if (sourceText.isBlank()) "" else "【演示结果】→ ${sourceText.reversed()}"
-        if (translatedText.isNotBlank()) {
-            history.add(0, TranslationItem(
-                id = System.currentTimeMillis(),
-                sourceLang = sourceLang,
-                targetLang = targetLang,
-                sourceText = sourceText,
-                translatedText = translatedText
-            ))
-            if (history.size > 20) history.removeAt(history.lastIndex)
+        viewModelScope.launch {
+            if (sourceText.isBlank()) {
+                translatedText = ""
+                return@launch
+            }
+            
+            isLoading = true
+            try {
+                // 使用OpenAI兼容API进行翻译
+                val result = translationService.translate(
+                    sourceText,
+                    getSourceLanguageName(),
+                    getTargetLanguageName()
+                )
+                translatedText = result
+                
+                // 添加到历史记录
+                if (translatedText.isNotBlank()) {
+                    history.add(0, TranslationItem(
+                        id = System.currentTimeMillis(),
+                        sourceLang = sourceLang,
+                        targetLang = targetLang,
+                        sourceText = sourceText,
+                        translatedText = translatedText
+                    ))
+                    if (history.size > 20) history.removeAt(history.lastIndex)
+                }
+            } catch (e: Exception) {
+                translatedText = "翻译出错: ${e.message}"
+            } finally {
+                isLoading = false
+            }
+        }
+    }
+    
+    private fun getSourceLanguageName(): String {
+        return when (sourceLang.code) {
+            "auto" -> "任意语言"
+            "en" -> "英语"
+            "zh" -> "中文"
+            "ja" -> "日语"
+            "ko" -> "韩语"
+            "es" -> "西班牙语"
+            "fr" -> "法语"
+            else -> sourceLang.name
+        }
+    }
+    
+    private fun getTargetLanguageName(): String {
+        return when (targetLang.code) {
+            "en" -> "英语"
+            "zh" -> "中文"
+            "ja" -> "日语"
+            "ko" -> "韩语"
+            "es" -> "西班牙语"
+            "fr" -> "法语"
+            else -> targetLang.name
         }
     }
 
@@ -176,7 +233,10 @@ fun LanguageRow(
 
 // ===== 翻译结果卡片 =====
 @Composable
-fun ResultCard(text: String) {
+fun ResultCard(text: String, onCopySuccess: () -> Unit = {}) {
+    val context = LocalContext.current
+    val clipboardManager = ContextCompat.getSystemService(context, ClipboardManager::class.java)
+    
     ElevatedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -184,7 +244,14 @@ fun ResultCard(text: String) {
                 Spacer(Modifier.width(8.dp))
                 Text("翻译结果", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.weight(1f))
-                IconButton(onClick = { /* TODO: 复制 */ }) {
+                IconButton(onClick = { 
+                    // 复制到剪贴板
+                    val clip = ClipData.newPlainText("翻译结果", text)
+                    clipboardManager?.setPrimaryClip(clip)
+                    
+                    // 调用成功回调
+                    onCopySuccess()
+                }) {
                     Icon(Icons.Rounded.ContentCopy, contentDescription = "复制")
                 }
                 IconButton(onClick = { /* TODO: 朗读 */ }) {
@@ -266,7 +333,8 @@ fun LanguagePickerSheet(
 fun TranslateScreen(
     vm: TranslateViewModel,
     onPickSource: () -> Unit,
-    onPickTarget: () -> Unit
+    onPickTarget: () -> Unit,
+    snackbarHostState: SnackbarHostState
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     val configuration = LocalConfiguration.current
@@ -317,8 +385,19 @@ fun TranslateScreen(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            FilledTonalButton(onClick = vm::translate, modifier = Modifier.weight(1f)) {
-                Text("翻译")
+            FilledTonalButton(
+                onClick = vm::translate, 
+                modifier = Modifier.weight(1f),
+                enabled = !vm.isLoading // 在加载时禁用按钮
+            ) {
+                if (vm.isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text("翻译")
+                }
             }
             OutlinedButton(onClick = { vm.updateSourceText("") }) {
                 Icon(Icons.Rounded.Delete, contentDescription = "清空")
@@ -330,7 +409,15 @@ fun TranslateScreen(
             enter = fadeIn(),
             exit = fadeOut()
         ) {
-            ResultCard(text = vm.translatedText)
+            ResultCard(
+                text = vm.translatedText,
+                onCopySuccess = {
+                    // 显示Snackbar消息
+                    vm.viewModelScope.launch {
+                        snackbarHostState.showSnackbar("已复制到剪贴板")
+                    }
+                }
+            )
         }
         Spacer(Modifier.height(8.dp))
     }
@@ -422,7 +509,8 @@ fun TranslatorApp(vm: TranslateViewModel = viewModel()) {
                             TranslateScreen(
                                 vm = vm,
                                 onPickSource = { showLangPicker = LangPickMode.Source },
-                                onPickTarget = { showLangPicker = LangPickMode.Target }
+                                onPickTarget = { showLangPicker = LangPickMode.Target },
+                                snackbarHostState = snackbarHostState
                             )
                         }
                         composable(Routes.History) {
