@@ -30,8 +30,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -45,11 +45,13 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import kotlinx.coroutines.launch
 
+// ===== Routes =====
 object Routes {
     const val Translate = "translate"
     const val History = "history"
 }
 
+// ===== MainActivity =====
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -63,7 +65,6 @@ class MainActivity : ComponentActivity() {
 fun TranslatorTheme(content: @Composable () -> Unit) {
     val context = LocalContext.current
     val darkTheme = isSystemInDarkTheme()
-
     val colorScheme =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
@@ -74,20 +75,13 @@ fun TranslatorTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = colorScheme,
         typography = Typography(),
-        shapes = Shapes(
-            extraSmall = MaterialTheme.shapes.extraSmall,
-            small = MaterialTheme.shapes.small,
-            medium = MaterialTheme.shapes.medium,
-            large = MaterialTheme.shapes.large,
-            extraLarge = MaterialTheme.shapes.extraLarge
-        ),
+        shapes = Shapes(),
         content = content
     )
 }
 
 // ===== 数据模型 =====
 data class Language(val code: String, val name: String)
-
 data class TranslationItem(
     val id: Long,
     val sourceLang: Language,
@@ -96,9 +90,9 @@ data class TranslationItem(
     val translatedText: String
 )
 
-// ===== ViewModel：演示用假翻译器（请替换为真实引擎）=====
+// ===== ViewModel（演示用假翻译器）=====
 class TranslateViewModel : ViewModel() {
-    private val languages = listOf(
+    private val availableLanguages = listOf(
         Language("auto", "自动检测"),
         Language("en", "英语"),
         Language("zh", "中文"),
@@ -108,20 +102,14 @@ class TranslateViewModel : ViewModel() {
         Language("fr", "法语"),
     )
 
-    var sourceLang by mutableStateOf(languages[0])
-        private set
-    var targetLang by mutableStateOf(languages[2])
-        private set
+    var sourceLang by mutableStateOf(availableLanguages[0]); private set
+    var targetLang by mutableStateOf(availableLanguages[2]); private set
 
-    var sourceText by mutableStateOf("")
-        private set
-    var translatedText by mutableStateOf("")
-        private set
+    var sourceText by mutableStateOf(""); private set
+    var translatedText by mutableStateOf(""); private set
 
-    var history by mutableStateOf(listOf<TranslationItem>())
-        private set
+    var history = mutableStateListOf<TranslationItem>(); private set
 
-    // 避免与属性 setter 同名导致 JVM 签名冲突
     fun updateSourceLang(lang: Language) { sourceLang = lang }
     fun updateTargetLang(lang: Language) { targetLang = lang }
     fun updateSourceText(text: String) { sourceText = text }
@@ -135,102 +123,33 @@ class TranslateViewModel : ViewModel() {
     }
 
     fun translate() {
-        // TODO: 将此处替换为真实翻译逻辑（如 ML Kit、on-device、或云端 API）
-        translatedText =
-            if (sourceText.isBlank()) ""
-            else "【演示结果】→ ${sourceText.reversed()}"
-
+        translatedText = if (sourceText.isBlank()) "" else "【演示结果】→ ${sourceText.reversed()}"
         if (translatedText.isNotBlank()) {
-            history = listOf(
-                TranslationItem(
-                    id = System.currentTimeMillis(),
-                    sourceLang = sourceLang,
-                    targetLang = targetLang,
-                    sourceText = sourceText,
-                    translatedText = translatedText
-                )
-            ) + history.take(19)
+            history.add(0, TranslationItem(
+                id = System.currentTimeMillis(),
+                sourceLang = sourceLang,
+                targetLang = targetLang,
+                sourceText = sourceText,
+                translatedText = translatedText
+            ))
+            if (history.size > 20) history.removeAt(history.lastIndex)
         }
     }
 
-    fun languages(): List<Language> = languages
+    fun languages(): List<Language> = availableLanguages
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun HistoryScreen(
-    items: List<TranslationItem>,
-    onBack: () -> Unit,
-) {
-    if (items.isEmpty()) {
-        // 空态
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(24.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Icon(Icons.Rounded.History, contentDescription = null)
-            Spacer(Modifier.height(8.dp))
-            Text("暂无历史记录", style = MaterialTheme.typography.bodyLarge)
-        }
-        return
-    }
-
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .semantics { contentDescription = "历史记录页面" },
-        contentPadding = PaddingValues(vertical = 8.dp)
-    ) {
-        items(items, key = { it.id }) { item ->
-            ListItem(
-                headlineContent = {
-                    Text(
-                        text = "${item.sourceLang.name} → ${item.targetLang.name}",
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                },
-                supportingContent = {
-                    Column {
-                        Text(
-                            item.sourceText,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            item.translatedText,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                },
-                trailingContent = {
-                    Icon(Icons.Rounded.Output, contentDescription = null)
-                }
-            )
-            Divider()
-        }
-    }
-}
-
-
+// ===== 语言选择行 =====
 @Composable
 fun LanguageRow(
     source: Language,
     target: Language,
     onPickSource: () -> Unit,
     onPickTarget: () -> Unit,
-    onSwap: () -> Unit,
+    onSwap: () -> Unit
 ) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 8.dp),
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -240,22 +159,22 @@ fun LanguageRow(
             label = { Text(source.name) },
             leadingIcon = { Icon(Icons.Rounded.Language, contentDescription = null) }
         )
-        IconButton(
-            onClick = onSwap,
-            modifier = Modifier.semantics { contentDescription = "交换语言" }
-        ) { Icon(Icons.Rounded.SwapHoriz, contentDescription = null) }
+        IconButton(onClick = onSwap) {
+            Icon(Icons.Rounded.SwapHoriz, contentDescription = "交换语言")
+        }
         AssistChip(
             onClick = onPickTarget,
             label = { Text(target.name) },
             leadingIcon = { Icon(Icons.Rounded.Translate, contentDescription = null) }
         )
         Spacer(Modifier.weight(1f))
-        IconButton(onClick = { /* 书签/收藏 */ }) {
+        IconButton(onClick = { /* TODO: 收藏功能 */ }) {
             Icon(Icons.Rounded.BookmarkAdd, contentDescription = "收藏")
         }
     }
 }
 
+// ===== 翻译结果卡片 =====
 @Composable
 fun ResultCard(text: String) {
     ElevatedCard(Modifier.fillMaxWidth()) {
@@ -263,11 +182,7 @@ fun ResultCard(text: String) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.Output, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
-                Text(
-                    "翻译结果",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
+                Text("翻译结果", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.weight(1f))
                 IconButton(onClick = { /* TODO: 复制 */ }) {
                     Icon(Icons.Rounded.ContentCopy, contentDescription = "复制")
@@ -280,24 +195,56 @@ fun ResultCard(text: String) {
         }
     }
 }
+
+// ===== 历史记录 =====
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun HistoryScreen(items: List<TranslationItem>) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        if (items.isEmpty()) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(Icons.Rounded.History, contentDescription = null)
+                Spacer(Modifier.height(8.dp))
+                Text("暂无历史记录", style = MaterialTheme.typography.bodyLarge)
+            }
+        } else {
+            LazyColumn(
+                contentPadding = PaddingValues(8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                items(items, key = { it.id }) { item ->
+                    ListItem(
+                        headlineContent = {
+                            Text("${item.sourceLang.name} → ${item.targetLang.name}")
+                        },
+                        supportingContent = {
+                            Text(item.sourceText, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        },
+                        trailingContent = {
+                            Icon(Icons.Rounded.Output, contentDescription = null)
+                        }
+                    )
+                    Divider()
+                }
+            }
+        }
+    }
+}
+
+// ===== 语言选择底部弹窗 =====
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LanguagePickerSheet(
     title: String,
     languages: List<Language>,
     onDismiss: () -> Unit,
-    onChoose: (Language) -> Unit,
+    onChoose: (Language) -> Unit
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
-        Text(
-            text = title,
-            modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-            style = MaterialTheme.typography.titleLarge
-        )
+        Text(title, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+            style = MaterialTheme.typography.titleLarge)
         LazyColumn(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 24.dp)
+            modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp)
         ) {
             items(languages) { lang ->
                 ListItem(
@@ -306,7 +253,6 @@ fun LanguagePickerSheet(
                     leadingContent = { Icon(Icons.Rounded.Flag, contentDescription = null) },
                     modifier = Modifier
                         .clickable { onChoose(lang) }
-                        .semantics { contentDescription = "选择 ${lang.name}" }
                         .padding(horizontal = 8.dp)
                 )
                 Divider()
@@ -315,6 +261,82 @@ fun LanguagePickerSheet(
     }
 }
 
+// ===== 翻译主界面 =====
+@Composable
+fun TranslateScreen(
+    vm: TranslateViewModel,
+    onPickSource: () -> Unit,
+    onPickTarget: () -> Unit
+) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    val configuration = LocalConfiguration.current
+    val halfScreenHeight = configuration.screenHeightDp.dp * 0.5f
+
+    // 添加 verticalScroll
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp)
+            .verticalScroll(rememberScrollState()), // ← 支持整体滚动
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        LanguageRow(
+            source = vm.sourceLang,
+            target = vm.targetLang,
+            onPickSource = onPickSource,
+            onPickTarget = onPickTarget,
+            onSwap = vm::swapLanguages
+        )
+
+        Box(modifier = Modifier.fillMaxWidth()) {
+            OutlinedTextField(
+                value = vm.sourceText,
+                onValueChange = vm::updateSourceText,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = if (expanded) configuration.screenHeightDp.dp else halfScreenHeight),
+                minLines = 6,
+                maxLines = Int.MAX_VALUE,
+                placeholder = { Text("输入要翻译的文本…") },
+                leadingIcon = { Icon(Icons.Rounded.Edit, contentDescription = null) },
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { vm.translate() }),
+                singleLine = false
+            )
+            IconButton(onClick = { expanded = !expanded },
+                modifier = Modifier.align(Alignment.TopEnd)) {
+                Icon(
+                    if (expanded) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen,
+                    contentDescription = if (expanded) "退出全屏" else "全屏"
+                )
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            FilledTonalButton(onClick = vm::translate, modifier = Modifier.weight(1f)) {
+                Text("翻译")
+            }
+            OutlinedButton(onClick = { vm.updateSourceText("") }) {
+                Icon(Icons.Rounded.Delete, contentDescription = "清空")
+            }
+        }
+
+        AnimatedVisibility(
+            visible = vm.translatedText.isNotBlank(),
+            enter = fadeIn(),
+            exit = fadeOut()
+        ) {
+            ResultCard(text = vm.translatedText)
+        }
+        Spacer(Modifier.height(8.dp))
+    }
+}
+
+
 // ===== App Scaffold =====
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -322,7 +344,7 @@ fun TranslatorApp(vm: TranslateViewModel = viewModel()) {
     TranslatorTheme {
         val snackbarHostState = remember { SnackbarHostState() }
         val navController = rememberNavController()
-        val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+        val drawerState = rememberDrawerState(DrawerValue.Closed)
         val scope = rememberCoroutineScope()
         var showLangPicker by remember { mutableStateOf<LangPickMode?>(null) }
 
@@ -330,11 +352,8 @@ fun TranslatorApp(vm: TranslateViewModel = viewModel()) {
             drawerState = drawerState,
             drawerContent = {
                 ModalDrawerSheet {
-                    Text(
-                        text = "菜单",
-                        modifier = Modifier.padding(16.dp),
-                        style = MaterialTheme.typography.titleMedium
-                    )
+                    Text("菜单", modifier = Modifier.padding(16.dp),
+                        style = MaterialTheme.typography.titleMedium)
                     NavigationDrawerItem(
                         label = { Text("翻译") },
                         selected = currentRoute(navController) == Routes.Translate,
@@ -388,38 +407,30 @@ fun TranslatorApp(vm: TranslateViewModel = viewModel()) {
                     )
                 },
                 floatingActionButton = {
-                    // 仅在翻译页显示语音输入按钮
                     if (currentRoute(navController) == Routes.Translate) {
                         ExtendedFloatingActionButton(
                             text = { Text("语音输入") },
                             icon = { Icon(Icons.Rounded.Mic, contentDescription = null) },
-                            onClick = { /* TODO: 语音识别入口 */ },
+                            onClick = { /* TODO: 语音识别入口 */ }
                         )
                     }
                 }
             ) { innerPadding ->
                 Surface(Modifier.padding(innerPadding)) {
-                    NavHost(
-                        navController = navController,
-                        startDestination = Routes.Translate
-                    ) {
+                    NavHost(navController, startDestination = Routes.Translate) {
                         composable(Routes.Translate) {
                             TranslateScreen(
                                 vm = vm,
                                 onPickSource = { showLangPicker = LangPickMode.Source },
-                                onPickTarget = { showLangPicker = LangPickMode.Target },
+                                onPickTarget = { showLangPicker = LangPickMode.Target }
                             )
                         }
                         composable(Routes.History) {
-                            HistoryScreen(
-                                items = vm.history,
-                                onBack = { navController.popBackStack() }
-                            )
+                            HistoryScreen(items = vm.history)
                         }
                     }
                 }
 
-                // 底部语言选择器
                 if (showLangPicker != null) {
                     LanguagePickerSheet(
                         title = if (showLangPicker == LangPickMode.Source) "选择源语言" else "选择目标语言",
@@ -437,132 +448,14 @@ fun TranslatorApp(vm: TranslateViewModel = viewModel()) {
     }
 }
 
-/** 读取当前路由的简便函数 */
 @Composable
 private fun currentRoute(navController: NavHostController): String? {
     val backStackEntry by navController.currentBackStackEntryAsState()
     return backStackEntry?.destination?.route
 }
 
-
 enum class LangPickMode { Source, Target }
 
-// ===== 翻译主界面 =====
-@Composable
-fun TranslateScreen(
-    vm: TranslateViewModel,
-    onPickSource: () -> Unit,
-    onPickTarget: () -> Unit,
-) {
-    var expanded by rememberSaveable { mutableStateOf(false) }
-
-    val configuration = LocalConfiguration.current
-    val halfScreenHeight = configuration.screenHeightDp.dp * 0.5f
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp)
-            .semantics { contentDescription = "翻译主界面" },
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        // 语言选择行
-        LanguageRow(
-            source = vm.sourceLang,
-            target = vm.targetLang,
-            onPickSource = onPickSource,
-            onPickTarget = onPickTarget,
-            onSwap = vm::swapLanguages
-        )
-
-        // —— 可伸缩输入框 ——
-        Box(modifier = Modifier.fillMaxWidth()) {
-            val maxH = if (expanded) configuration.screenHeightDp.dp else halfScreenHeight
-
-            OutlinedTextField(
-                value = vm.sourceText,
-                onValueChange = vm::updateSourceText,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = maxH),
-                minLines = 6,
-                maxLines = Int.MAX_VALUE,
-                placeholder = { Text("输入要翻译的文本…") },
-                leadingIcon = { Icon(Icons.Rounded.Edit, contentDescription = null) },
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { vm.translate() }),
-                singleLine = false
-            )
-
-            IconButton(
-                onClick = { expanded = !expanded },
-                modifier = Modifier.align(Alignment.TopEnd)
-            ) {
-                if (expanded) {
-                    Icon(Icons.Outlined.FullscreenExit, contentDescription = "退出全屏")
-                } else {
-                    Icon(Icons.Outlined.Fullscreen, contentDescription = "全屏")
-                }
-            }
-        }
-
-        // 操作区
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            FilledTonalButton(
-                onClick = vm::translate,
-                modifier = Modifier.weight(1f)
-            ) { Text("翻译") }
-
-            OutlinedButton(onClick = { vm.updateSourceText("") }) {
-                Icon(Icons.Rounded.Delete, contentDescription = "清空")
-            }
-        }
-
-        // 翻译结果
-        AnimatedVisibility(
-            visible = vm.translatedText.isNotBlank(),
-            enter = fadeIn(),
-            exit = fadeOut()
-        ) {
-            ResultCard(text = vm.translatedText)
-        }
-
-        Spacer(Modifier.height(8.dp))
-    }
-}
-
-
-@Composable
-fun HistorySection(items: List<TranslationItem>) {
-    if (items.isEmpty()) return
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("历史记录", style = MaterialTheme.typography.titleMedium)
-        items.take(5).forEach { item ->
-            ListItem(
-                headlineContent = {
-                    Text(
-                        "${item.sourceLang.name} → ${item.targetLang.name}",
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                },
-                supportingContent = {
-                    Text(
-                        item.sourceText.take(40),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                },
-                trailingContent = { Icon(Icons.Rounded.History, contentDescription = null) }
-            )
-            Divider()
-        }
-    }
-}
 
 
 // ===== 设计要点（简述）=====
