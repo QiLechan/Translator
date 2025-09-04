@@ -4,13 +4,11 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Api
 import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.ModelTraining
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -23,8 +21,9 @@ fun SettingsScreen(
 ) {
     var apiEndpoint by remember { mutableStateOf(ApiConfig.API_ENDPOINT) }
     var apiKey by remember { mutableStateOf(ApiConfig.API_KEY) }
-    var modelName by remember { mutableStateOf(ApiConfig.MODEL_NAME) }
-    
+    var transModelName by remember { mutableStateOf(ApiConfig.TRANS_MODEL_NAME) }
+    var audioInputModelName by remember { mutableStateOf(ApiConfig.AUDIO_INPUT_MODEL_NAME) }
+
     Scaffold(
 //        topBar = {
 //            TopAppBar(
@@ -76,15 +75,39 @@ fun SettingsScreen(
             )
             
             OutlinedTextField(
-                value = modelName,
-                onValueChange = { modelName = it },
-                label = { Text("模型名称") },
+                value = transModelName,
+                onValueChange = { transModelName = it },
+                label = { Text("翻译模型") },
+                leadingIcon = {
+                    Icon(Icons.Rounded.ModelTraining, contentDescription = null)
+                },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            OutlinedTextField(
+                value = audioInputModelName,
+                onValueChange = { audioInputModelName = it },
+                label = { Text("语音输入模型") },
                 leadingIcon = {
                     Icon(Icons.Rounded.ModelTraining, contentDescription = null)
                 },
                 modifier = Modifier.fillMaxWidth()
             )
             
+//            Spacer(modifier = Modifier.height(16.dp))
+//
+//            Text(
+//                "语音识别API设置",
+//                style = MaterialTheme.typography.titleLarge,
+//                fontWeight = FontWeight.Bold
+//            )
+//
+//            Text(
+//                "注意：语音识别功能需要SiliconFlow API密钥，与翻译API密钥相同",
+//                style = MaterialTheme.typography.bodyMedium,
+//                color = MaterialTheme.colorScheme.onSurfaceVariant
+//            )
+//
             Spacer(modifier = Modifier.weight(1f))
             
             // 保存按钮
@@ -93,7 +116,7 @@ fun SettingsScreen(
                     // 保存设置
                     ApiConfig.API_ENDPOINT = apiEndpoint
                     ApiConfig.API_KEY = apiKey
-                    ApiConfig.MODEL_NAME = modelName
+                    ApiConfig.TRANS_MODEL_NAME = transModelName
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {

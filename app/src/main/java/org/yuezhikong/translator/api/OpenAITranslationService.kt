@@ -65,7 +65,7 @@ class OpenAITranslationService {
      * 构建翻译提示词
      */
     private fun buildTranslationPrompt(sourceText: String, sourceLang: String, targetLang: String): String {
-        return "请将以下${sourceLang}文本翻译成${targetLang}:\n\n$sourceText\n\n只返回翻译结果："
+        return "请将以下${sourceLang}文本翻译成${targetLang}:\n\n$sourceText\n\n"
     }
     
     /**
@@ -74,16 +74,20 @@ class OpenAITranslationService {
     private fun createRequestBody(prompt: String): RequestBody {
         // 创建消息对象
         val messageObj = JSONObject()
+        val systemMessageObj = JSONObject()
+        systemMessageObj.put("role", "system")
+        systemMessageObj.put("content", "只返回翻译结果不要输出多余的内容")
         messageObj.put("role", "user")
         messageObj.put("content", prompt)
         
         // 创建消息数组
         val messagesArray = JSONArray()
+        messagesArray.put(systemMessageObj)
         messagesArray.put(messageObj)
         
         // 创建主对象
         val json = JSONObject()
-        json.put("model", ApiConfig.MODEL_NAME)
+        json.put("model", ApiConfig.TRANS_MODEL_NAME)
         json.put("messages", messagesArray)
         json.put("temperature", 0.3) // 降低随机性以获得更一致的翻译
         

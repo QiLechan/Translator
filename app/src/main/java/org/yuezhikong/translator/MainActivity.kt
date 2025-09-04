@@ -2,14 +2,20 @@
 
 package org.yuezhikong.translator
 
+import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
+import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -24,6 +30,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Fullscreen
 import androidx.compose.material.icons.outlined.FullscreenExit
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.material3.dynamicDarkColorScheme
@@ -53,6 +60,8 @@ import androidx.navigation.compose.rememberNavController
 import kotlinx.coroutines.launch
 import org.yuezhikong.translator.api.OpenAITranslationService
 import org.yuezhikong.translator.api.ContentSafetyService
+import org.yuezhikong.translator.config.ApiConfig
+import org.yuezhikong.translator.speech.SpeechRecognitionManager
 import org.yuezhikong.translator.ui.settings.SettingsScreen
 
 // ===== Routes =====
@@ -128,6 +137,9 @@ class TranslateViewModel : ViewModel() {
     
     // 添加内容安全状态
     var isContentSafe by mutableStateOf(true); private set
+    
+    // 语音识别状态
+    var isSpeechRecognizing by mutableStateOf(false); private set
 
     fun updateSourceLang(lang: Language) { sourceLang = lang }
     fun updateTargetLang(lang: Language) { targetLang = lang }
@@ -215,6 +227,25 @@ class TranslateViewModel : ViewModel() {
     }
 
     fun languages(): List<Language> = availableLanguages
+    
+    /**
+     * 开始语音识别
+     */
+    fun startSpeechRecognition(context: Context, snackbarHostState: SnackbarHostState) {
+        viewModelScope.launch {
+            try {
+                isSpeechRecognizing = true
+                // 在实际应用中，这里应该调用语音识别服务
+                // 由于语音识别涉及Activity和Context，需要通过回调或事件总线来处理
+                // 这里简化处理，只是演示状态变化
+                snackbarHostState.showSnackbar("开始语音识别...")
+            } catch (e: Exception) {
+                snackbarHostState.showSnackbar("语音识别启动失败: ${e.message}")
+            } finally {
+                isSpeechRecognizing = false
+            }
+        }
+    }
 }
 
 // ===== 语言选择行 =====
@@ -276,7 +307,7 @@ fun ResultCard(text: String, onCopySuccess: () -> Unit) {
                     Icon(Icons.Rounded.ContentCopy, contentDescription = "复制")
                 }
                 IconButton(onClick = { /* TODO: 朗读 */ }) {
-                    Icon(Icons.Rounded.VolumeUp, contentDescription = "朗读")
+                    Icon(Icons.AutoMirrored.Rounded.VolumeUp, contentDescription = "朗读")
                 }
             }
             Text(text, style = MaterialTheme.typography.bodyLarge)
@@ -357,10 +388,40 @@ fun TranslateScreen(
     onPickTarget: () -> Unit,
     snackbarHostState: SnackbarHostState
 ) {
+    val context = LocalContext.current
     var expanded by rememberSaveable { mutableStateOf(false) }
     val configuration = LocalConfiguration.current
     val halfScreenHeight = configuration.screenHeightDp.dp * 0.5f
     val focusManager = LocalFocusManager.current
+    
+    // 语音识别相关状态
+    var isRecording by remember { mutableStateOf(false) }
+    var speechManager by remember { mutableStateOf<SpeechRecognitionManager?>(null) }
+    
+    // 权限请求
+    val requestPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+        onResult = { isGranted ->
+            if (isGranted) {
+                // 权限已授予，初始化语音服务
+                speechManager = SpeechRecognitionManager(context).apply {
+                    setOnResultListener { text ->
+                        vm.updateSourceText(text)
+                        vm.translate()
+                        isRecording = false
+                    }
+                    setOnErrorListener { error ->
+                        Log.e("SpeechRecognition", "语音识别错误: $error")
+                        isRecording = false
+                    }
+                }
+                startSpeechRecognition(speechManager!!, isRecording, snackbarHostState)
+                isRecording = true
+            } else {
+                Toast.makeText(context, "需要录音权限才能使用语音输入功能", Toast.LENGTH_SHORT).show()
+            }
+        }
+    )
 
     // 添加 verticalScroll
     Column(
@@ -428,6 +489,45 @@ fun TranslateScreen(
                     Text("翻译")
                 }
             }
+            
+            // 语音输入按钮
+            OutlinedButton(
+                onClick = {
+                    // 检查录音权限
+                    if (ContextCompat.checkSelfPermission(
+                            context,
+                            Manifest.permission.RECORD_AUDIO
+                        ) == PackageManager.PERMISSION_GRANTED
+                    ) {
+                        // 权限已授予，初始化语音服务
+                        speechManager = SpeechRecognitionManager(context).apply {
+                            setOnResultListener { text ->
+                                vm.updateSourceText(text)
+                                vm.translate()
+                                isRecording = false
+                            }
+                            setOnErrorListener { error ->
+                                Log.e("SpeechRecognition", "语音识别错误: $error")
+                                isRecording = false
+                                vm.viewModelScope.launch {
+                                    snackbarHostState.showSnackbar("语音识别错误: $error")
+                                }
+                            }
+                        }
+                        startSpeechRecognition(speechManager!!, isRecording, snackbarHostState)
+                        isRecording = true
+                    } else {
+                        // 请求录音权限
+                        requestPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                    }
+                }
+            ) {
+                Icon(
+                    if (isRecording) Icons.Rounded.Stop else Icons.Rounded.Mic,
+                    contentDescription = if (isRecording) "停止录音" else "语音输入"
+                )
+            }
+            
             OutlinedButton(onClick = { vm.updateSourceText("") }) {
                 Icon(Icons.Rounded.Delete, contentDescription = "清空")
             }
@@ -481,6 +581,32 @@ fun TranslateScreen(
     }
 }
 
+/**
+ * 开始语音识别
+ */
+private fun startSpeechRecognition(
+    speechManager: SpeechRecognitionManager,
+    isRecording: Boolean,
+    snackbarHostState: SnackbarHostState
+) {
+    if (isRecording) {
+        // 停止录音
+        speechManager.stopRecording()
+        speechManager.transcribeAudio()
+    } else {
+        // 开始录音
+        if (speechManager.startRecording()) {
+            // 显示提示
+            // 3秒后自动停止录音
+            Thread {
+                Thread.sleep(3000) // 录音3秒
+                speechManager.stopRecording()
+                speechManager.transcribeAudio()
+            }.start()
+        }
+    }
+}
+
 
 // ===== App Scaffold =====
 @OptIn(ExperimentalMaterial3Api::class)
@@ -496,7 +622,9 @@ fun TranslatorApp(vm: TranslateViewModel = viewModel()) {
         ModalNavigationDrawer(
             drawerState = drawerState,
             drawerContent = {
-                ModalDrawerSheet {
+                ModalDrawerSheet(
+                    modifier = Modifier.width(280.dp) // 设置侧边栏宽度为280dp，使其更窄
+                ) {
                     Text("菜单", modifier = Modifier.padding(16.dp),
                         style = MaterialTheme.typography.titleMedium)
                     NavigationDrawerItem(
@@ -579,15 +707,15 @@ fun TranslatorApp(vm: TranslateViewModel = viewModel()) {
                         }
                     )
                 },
-                floatingActionButton = {
-                    if (currentRoute(navController) == Routes.Translate) {
-                        ExtendedFloatingActionButton(
-                            text = { Text("语音输入") },
-                            icon = { Icon(Icons.Rounded.Mic, contentDescription = null) },
-                            onClick = { /* TODO: 语音识别入口 */ }
-                        )
-                    }
-                }
+//                floatingActionButton = {
+//                    if (currentRoute(navController) == Routes.Translate) {
+//                        ExtendedFloatingActionButton(
+//                            text = { Text("语音输入") },
+//                            icon = { Icon(Icons.Rounded.Mic, contentDescription = null) },
+//                            onClick = {}
+//                        )
+//                    }
+//                }
             ) { innerPadding ->
                 Surface(Modifier.padding(innerPadding)) {
                     NavHost(navController, startDestination = Routes.Translate) {
