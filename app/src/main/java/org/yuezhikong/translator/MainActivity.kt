@@ -62,6 +62,7 @@ import org.yuezhikong.translator.api.OpenAITranslationService
 import org.yuezhikong.translator.api.ContentSafetyService
 import org.yuezhikong.translator.config.ApiConfig
 import org.yuezhikong.translator.speech.SpeechRecognitionManager
+import org.yuezhikong.translator.speech.TTSManager
 import org.yuezhikong.translator.ui.settings.SettingsScreen
 
 // ===== Routes =====
@@ -288,6 +289,24 @@ fun LanguageRow(
 fun ResultCard(text: String, onCopySuccess: () -> Unit) {
     val context = LocalContext.current
     val clipboardManager = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    val ttsManager = remember { TTSManager(context) }
+    var isPlaying by remember { mutableStateOf(false) }
+    
+    // 设置TTS管理器的监听器
+    DisposableEffect(ttsManager) {
+        ttsManager.setOnCompletionListener {
+            isPlaying = false
+        }
+        
+        ttsManager.setOnErrorListener { error ->
+            isPlaying = false
+            Log.e("ResultCard", "TTS播放错误: $error")
+        }
+        
+        onDispose {
+            ttsManager.release()
+        }
+    }
     
     ElevatedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -306,8 +325,21 @@ fun ResultCard(text: String, onCopySuccess: () -> Unit) {
                 }) {
                     Icon(Icons.Rounded.ContentCopy, contentDescription = "复制")
                 }
-                IconButton(onClick = { /* TODO: 朗读 */ }) {
-                    Icon(Icons.AutoMirrored.Rounded.VolumeUp, contentDescription = "朗读")
+                IconButton(onClick = { 
+                    // 朗读文本
+                    if (isPlaying) {
+                        ttsManager.stop()
+                        isPlaying = false
+                    } else {
+                        isPlaying = true
+                        ttsManager.speakText(text)
+                    }
+                }) {
+                    if (isPlaying) {
+                        Icon(Icons.Rounded.Stop, contentDescription = "停止")
+                    } else {
+                        Icon(Icons.AutoMirrored.Rounded.VolumeUp, contentDescription = "朗读")
+                    }
                 }
             }
             Text(text, style = MaterialTheme.typography.bodyLarge)

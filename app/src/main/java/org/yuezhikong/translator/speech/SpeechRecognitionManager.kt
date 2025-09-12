@@ -4,14 +4,17 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.media.MediaRecorder
+import android.media.MediaPlayer
 import android.util.Log
 import androidx.core.content.ContextCompat
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.asRequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import org.yuezhikong.translator.config.ApiConfig
 import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
 
 class SpeechRecognitionManager(private val context: Context) {
@@ -127,7 +130,7 @@ class SpeechRecognitionManager(private val context: Context) {
         
         // 构建请求
         val request = Request.Builder()
-            .url(ApiConfig.AUDIO_API_URL)
+            .url(ApiConfig.AUDIO_INPUT_API_URL)
             .addHeader("Authorization", "Bearer ${ApiConfig.API_KEY}")
             .post(requestBody)
             .build()
@@ -164,6 +167,87 @@ class SpeechRecognitionManager(private val context: Context) {
                     } catch (e: Exception) {
                         Log.w(TAG, "删除临时音频文件失败", e)
                     }
+                }
+            }
+        })
+    }
+
+    fun TTS(input: String){
+        if (ApiConfig.API_KEY.isBlank()) {
+            onErrorListener?.invoke("API密钥未配置，请在设置中配置SiliconFlow API密钥")
+            return
+        }
+
+        // 构建请求体
+        val json = JSONObject().apply {
+            put("model", ApiConfig.AUDIO_OUTPUT_MODEL_NAME)
+            put("input", input)
+            put("voice", "fnlp/MOSS-TTSD-v0.5:alex")  // 添加必需的voice参数
+        }
+        
+        val requestBody = json.toString().toRequestBody("application/json".toMediaType())
+
+        val request = Request.Builder()
+            .url(ApiConfig.AUDIO_OUTPUT_API_URL)
+            .addHeader("Authorization", "Bearer ${ApiConfig.API_KEY}")
+            .post(requestBody)
+            .build()
+
+        val fileName = "TTS_${System.currentTimeMillis()}.mp3"
+        val file = File(context.cacheDir, fileName)
+
+        client.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                Log.e(TAG, "API请求失败", e)
+                onErrorListener?.invoke("网络请求失败: ${e.message}")
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                try {
+                    if (response.isSuccessful) {
+                        val responseBody = response.body
+                        if (responseBody != null) {
+                            // 创建临时音频文件
+                            val fileName = "TTS_${System.currentTimeMillis()}.mp3"
+                            val file = File(context.cacheDir, fileName)
+
+                            // 写入音频数据
+                            val fos = FileOutputStream(file)
+                            fos.use {
+                                it.write(responseBody.bytes())
+                            }
+                            
+                            // 播放音频
+                            val mediaPlayer = MediaPlayer()
+                            mediaPlayer.setDataSource(file.absolutePath)
+                            mediaPlayer.prepare()
+                            mediaPlayer.start()
+                            
+                            // 播放完成后删除临时文件
+                            mediaPlayer.setOnCompletionListener {
+                                try {
+                                    file.delete()
+                                } catch (e: Exception) {
+                                    Log.w(TAG, "删除临时音频文件失败", e)
+                                }
+                                it.release()
+                            }
+                        } else {
+                            val error = "API响应为空"
+                            Log.e(TAG, error)
+                            onErrorListener?.invoke(error)
+                        }
+                    } else {
+                        val responseBody = response.body?.string()
+                        val error = "API请求失败: ${response.code} - $responseBody"
+                        Log.e(TAG, error)
+                        onErrorListener?.invoke(error)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "解析响应失败", e)
+                    onErrorListener?.invoke("解析响应失败: ${e.message}")
+                } finally {
+                    response.close()
                 }
             }
         })

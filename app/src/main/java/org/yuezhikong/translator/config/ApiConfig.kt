@@ -4,10 +4,11 @@ object ApiConfig {
     // OpenAI兼容API端点
     var API_ENDPOINT = "https://api.siliconflow.cn/v1/chat/completions"
 
-    val AUDIO_API_URL = "https://api.siliconflow.cn/v1/audio/transcriptions"
-    
+    val AUDIO_INPUT_API_URL = "https://api.siliconflow.cn/v1/audio/transcriptions"
+
+    val AUDIO_OUTPUT_API_URL = "https://api.siliconflow.cn/v1/audio/speech"
     // API密钥
-    var API_KEY = "sk-bolahwnzsngvspbioljfnmsemuujkrdbvzccqkrykobqffsh"
+    var API_KEY = ""
     
     // 翻译模型名称
     var TRANS_MODEL_NAME = "Qwen/Qwen3-Coder-30B-A3B-Instruct"
