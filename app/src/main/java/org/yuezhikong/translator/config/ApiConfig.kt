@@ -17,5 +17,5 @@ object ApiConfig {
     var AUDIO_INPUT_MODEL_NAME = "FunAudioLLM/SenseVoiceSmall"
 
     // 语音输出模型名称
-    var AUDIO_OUTPUT_MODEL_NAME = "fnlp/MOSS-TTSD-v0.5"
+    var AUDIO_OUTPUT_MODEL_NAME = "IndexTeam/IndexTTS-2"
 }

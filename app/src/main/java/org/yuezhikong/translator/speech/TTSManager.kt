@@ -41,7 +41,7 @@ class TTSManager(private val context: Context) {
         val json = JSONObject().apply {
             put("model", ApiConfig.AUDIO_OUTPUT_MODEL_NAME)
             put("input", text)
-            put("voice", "fnlp/MOSS-TTSD-v0.5:alex")  // 添加必需的voice参数
+            put("voice", "IndexTeam/IndexTTS-2:alex")
         }
         
         val requestBody = json.toString().toRequestBody("application/json".toMediaType())
